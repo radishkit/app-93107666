@@ -1,0 +1,127 @@
+/*
+ * Radish Design Tokens v0.1.0
+ * Shared across all Radish App Templates.
+ * Source of truth: radishkit/packages/radish-ui/src/css/tokens.css
+ */
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --color-primary: #3B82F6;
+  --color-primary-hover: #2563EB;
+  --color-primary-active: #1D4ED8;
+  --color-primary-subtle: rgba(59, 130, 246, 0.08);
+
+  --color-success: #16A34A;
+  --color-success-subtle: rgba(22, 163, 74, 0.08);
+  --color-success-text: #15803D;
+  --color-warning: #D97706;
+  --color-warning-subtle: rgba(217, 119, 6, 0.08);
+  --color-warning-text: #B45309;
+  --color-error: #DC2626;
+  --color-error-subtle: rgba(220, 38, 38, 0.08);
+  --color-error-text: #B91C1C;
+  --color-info: #0284C7;
+  --color-info-subtle: rgba(2, 132, 199, 0.08);
+  --color-info-text: #0369A1;
+  --color-accent: #7C3AED;
+  --color-accent-subtle: rgba(124, 58, 237, 0.08);
+
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F8F9FA;
+  --bg-tertiary: #F1F3F5;
+
+  --text-primary: #1A1A2E;
+  --text-secondary: #5C6370;
+  --text-muted: #8B95A5;
+  --text-inverse: #FFFFFF;
+
+  --border-default: #E2E6EA;
+  --border-subtle: #EFF1F3;
+  --border-focus: #3B82F6;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Monaco, monospace;
+
+  --text-2xl: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-lg: 1.125rem;
+  --text-base: 0.9375rem;
+  --text-sm: 0.8125rem;
+  --text-xs: 0.75rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+}
+
+.dark {
+  --color-primary: #60A5FA;
+  --color-primary-hover: #3B82F6;
+  --color-primary-active: #2563EB;
+  --color-primary-subtle: rgba(96, 165, 250, 0.1);
+
+  --color-success: #22C55E;
+  --color-success-subtle: rgba(34, 197, 94, 0.12);
+  --color-success-text: #4ADE80;
+  --color-warning: #F59E0B;
+  --color-warning-subtle: rgba(245, 158, 11, 0.12);
+  --color-warning-text: #FBBF24;
+  --color-error: #EF4444;
+  --color-error-subtle: rgba(239, 68, 68, 0.12);
+  --color-error-text: #FCA5A5;
+  --color-info: #38BDF8;
+  --color-info-subtle: rgba(56, 189, 248, 0.12);
+  --color-info-text: #7DD3FC;
+  --color-accent: #A78BFA;
+  --color-accent-subtle: rgba(124, 58, 237, 0.12);
+
+  --bg-primary: #161618;
+  --bg-secondary: #1C1C1F;
+  --bg-tertiary: #252528;
+
+  --text-primary: #F0F0F2;
+  --text-secondary: #9CA3AF;
+  --text-muted: #6B7280;
+  --text-inverse: #161618;
+
+  --border-default: #2E2E32;
+  --border-subtle: #232326;
+  --border-focus: #60A5FA;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.16);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,58 @@
+/* App-specific overrides — design system loaded from ./radish-ui/ */
+
+/* Card content */
+.radish-card {
+  overflow: hidden;
+}
+
+.card-type {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.card-desc {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.5;
+}
+
+.card-date {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-2);
+}
+
+/* Error block spacing */
+.radish-error {
+  margin-bottom: var(--space-4);
+}
+
+/* Empty state icon — use SVG not emoji */
+.radish-empty__icon {
+  color: var(--text-muted);
+}
+.radish-empty__icon svg {
+  width: 48px;
+  height: 48px;
+  stroke-width: 1.5;
+}
+
+/* View toggle icons */
+.radish-view-toggle__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  min-width: 36px;
+}
+
+/* Record ID in cards */
+.radish-card .cell-mono {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}

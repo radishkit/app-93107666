@@ -1,0 +1,17 @@
+{
+  "$schema": "https://radishkit.com/schemas/radish-app.json",
+  "name": "Accela Dashboard",
+  "version": "1.0.0",
+  "description": "Records dashboard with search, filters, and view toggle",
+  "template": "accela-dashboard",
+  "runtime": {
+    "entrypoint": "src/main.tsx",
+    "framework": "react",
+    "bundler": "vite"
+  },
+  "connectors": ["accela"],
+  "permissions": {
+    "network": ["accela"],
+    "storage": false
+  }
+}
