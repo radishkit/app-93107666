@@ -1,17 +1,23 @@
 {
   "$schema": "https://radishkit.com/schemas/radish-app.json",
-  "name": "Accela Dashboard",
+  "name": "Business License Self-Service",
   "version": "1.0.0",
-  "description": "Records dashboard with search, filters, and view toggle",
+  "description": "Citizen-facing portal: look up and renew business licenses online \u2014 City of Null Island",
   "template": "accela-dashboard",
   "runtime": {
     "entrypoint": "src/main.tsx",
     "framework": "react",
     "bundler": "vite"
   },
-  "connectors": ["accela"],
+  "connectors": [
+    "accela"
+  ],
   "permissions": {
-    "network": ["accela"],
+    "network": [
+      "accela"
+    ],
     "storage": false
-  }
+  },
+  "appId": "93107666-a767-4b63-9d0e-3bf32d83752c",
+  "agencyId": "f4dfaeaa-dde2-48e8-8537-0e63cc63d27d"
 }
