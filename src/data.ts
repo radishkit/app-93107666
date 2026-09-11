@@ -3,7 +3,7 @@
 export type LicenseStatus = 'Active' | 'Expiring soon' | 'Expired';
 
 export interface License {
-  number: string; // BL26-XXXX
+  number: string; // BL26-XXXX or Accela customId
   businessName: string;
   dba?: string;
   type: string;
@@ -15,6 +15,10 @@ export interface License {
   issued: string; // YYYY-MM-DD
   expires: string; // YYYY-MM-DD
   renewalFee: number;
+  // Extra fields populated when record comes from Accela V4 API
+  _accelaStatus?: string;
+  _accelaModule?: string;
+  _accelaId?: string;
 }
 
 export interface Receipt {

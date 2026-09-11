@@ -5,7 +5,7 @@ import { License, findLicense, fmtDate, licenseStatus, hasSDK, searchLicensesAcc
 type SearchState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'results'; licenses: License[]; source: 'accela' | 'mock' }
+  | { kind: 'results'; licenses: License[]; source: 'accela' | 'mock'; method?: string }
   | { kind: 'error'; message: string; raw?: unknown };
 
 export function Landing({ go, licenses }: { go: (v: View) => void; licenses: License[] }) {
@@ -25,13 +25,11 @@ export function Landing({ go, licenses }: { go: (v: View) => void; licenses: Lic
       const result = await searchLicensesAccela(term);
 
       if (result.ok && result.licenses.length > 0) {
-        setSearch({ kind: 'results', licenses: result.licenses, source: 'accela' });
-        // If exactly one result, jump straight to detail
-        if (result.licenses.length === 1) {
-          go({ name: 'detail', licenseNumber: result.licenses[0].number, accelaLicense: result.licenses[0] });
-        }
+        setSearch({ kind: 'results', licenses: result.licenses, source: 'accela', method: result.method });
+        // If exactly one result, jump straight to detail (but DON'T auto-navigate
+        // so user can see the result card and the method used)
       } else if (result.ok && result.licenses.length === 0) {
-        setSearch({ kind: 'results', licenses: [], source: 'accela' });
+        setSearch({ kind: 'results', licenses: [], source: 'accela', method: result.method });
       } else {
         setSearch({ kind: 'error', message: result.error || 'Unknown error', raw: result.raw });
       }
@@ -171,6 +169,11 @@ export function Landing({ go, licenses }: { go: (v: View) => void; licenses: Lic
                 ({search.licenses.length} record{search.licenses.length !== 1 ? 's' : ''} from Accela)
               </span>
             </h2>
+            {search.method && (
+              <p style={{ fontSize: 12, color: '#64748b', marginTop: -8, marginBottom: 12, fontFamily: 'monospace' }}>
+                via {search.method}
+              </p>
+            )}
             <div className="permitlist">
               {search.licenses.map((lic) => {
                 const status = licenseStatus(lic);
@@ -184,8 +187,15 @@ export function Landing({ go, licenses }: { go: (v: View) => void; licenses: Lic
                       <div className="permitcard__id">{lic.number}</div>
                       <div className="permitcard__biz">{lic.businessName}</div>
                       <div className="permitcard__meta">
-                        {lic.type} · {lic.expires ? `expires ${fmtDate(lic.expires)}` : 'no expiry on file'}
+                        {lic.type}
+                        {lic._accelaStatus ? ` · Accela status: ${lic._accelaStatus}` : ''}
+                        {lic.expires ? ` · expires ${fmtDate(lic.expires)}` : ''}
                       </div>
+                      {lic._accelaId && (
+                        <div style={{ fontSize: 11, color: '#64748b', fontFamily: 'monospace', marginTop: 2 }}>
+                          id: {lic._accelaId}
+                        </div>
+                      )}
                     </div>
                     <div className="permitcard__side">
                       <span className={`badge badge--${status.replace(/\s/g, '').toLowerCase()}`}>

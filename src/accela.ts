@@ -1,11 +1,12 @@
 /**
  * accela.ts — Thin wrapper around window.radish.accela SDK.
  *
- * The RadishKit pipeline injects `window.radish` into the preview iframe.
- * This module exposes helpers that:
- *   1. Detect whether the SDK is present
- *   2. Query B1PERMIT via executeScript (EMSE SQL)
- *   3. Map raw Accela rows → the License shape the rest of the app uses
+ * Uses the V4 REST API methods (searchRecords, getRecords) which the broker
+ * proxies directly to Accela's /v4/... endpoints.
+ *
+ * NOTE: executeScript() is broken — the broker proxies '/execute-script' to
+ * Accela which doesn't have that endpoint (404). The broker-side handler for
+ * script execution isn't wired up for this app type. All V4 REST methods work.
  */
 
 import type { License } from './data';
@@ -14,15 +15,32 @@ import type { License } from './data';
 // SDK type shims (window.radish is injected at runtime, no npm package)
 // ---------------------------------------------------------------------------
 
+interface AccelaRecord {
+  id?: string;
+  customId?: string;
+  type?: { value?: string; text?: string; group?: string; category?: string; subType?: string; alias?: string };
+  status?: { value?: string; text?: string };
+  name?: string;
+  description?: string;
+  module?: string;
+  openedDate?: string;
+  closedDate?: string;
+  expirationDate?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
 interface RadishSDK {
   version: string;
   accela: {
     executeScript: (code: string) => Promise<unknown>;
     searchRecords: (criteria: object, opts?: { suppressOverlay?: boolean }) => Promise<unknown>;
+    getRecords: (params?: Record<string, string>) => Promise<unknown>;
     getRecord: (id: string) => Promise<unknown>;
-    getRecordFees: (id: string) => Promise<unknown>;
-    getRecordContacts: (id: string) => Promise<unknown>;
-    getRecordCustomForms: (id: string) => Promise<unknown>;
+    getRecordFees: (id: string, opts?: { suppressOverlay?: boolean }) => Promise<unknown>;
+    getRecordContacts: (id: string, opts?: { suppressOverlay?: boolean }) => Promise<unknown>;
+    getRecordCustomForms: (id: string, opts?: { suppressOverlay?: boolean }) => Promise<unknown>;
+    api: (path: string, method: string, opts?: { body?: unknown; suppressOverlay?: boolean }) => Promise<unknown>;
   };
   _debug: {
     getToken: () => string;
@@ -46,99 +64,135 @@ export function hasSDK(): boolean {
 }
 
 /**
- * Search for licenses in B1PERMIT via raw EMSE SQL.
+ * Search for records in Accela using V4 REST API.
  *
- * Accepts a search term which is matched against:
- *   - B1_ALT_ID (the human-readable license/record number)
- *   - B1_SPECIAL_TEXT (often used for business name / DBA)
- *
- * Also accepts a raw tracking number (B1_PER_ID1-B1_PER_ID2-B1_PER_ID3 concat).
+ * Strategy:
+ *   1. Try GET /v4/records?customId=<term> (exact match on B1_ALT_ID)
+ *   2. If no results, try GET /v4/records with broader params
+ *   3. Map V4 record objects → License shape
  */
 export async function searchLicensesAccela(query: string): Promise<{
   ok: boolean;
   licenses: License[];
   error?: string;
   raw?: unknown;
+  method?: string;
 }> {
   if (!window.radish) {
-    return { ok: false, licenses: [], error: 'RadishKit SDK not available (window.radish is undefined). This app must be viewed through the RadishKit preview proxy.' };
+    return {
+      ok: false,
+      licenses: [],
+      error: 'RadishKit SDK not available (window.radish is undefined). This app must be viewed through the RadishKit preview proxy.',
+    };
   }
 
-  const safeQ = query.replace(/'/g, "''").trim();
-
-  // Build EMSE script that queries B1PERMIT + related tables
-  const script = `
-function rowToObject(row) {
-  var obj = {};
-  var cols = row.getColumns();
-  for (var i = 0; i < cols.length; i++) {
-    var col = cols[i];
-    obj[col] = row.get(col);
+  const term = query.trim();
+  if (!term) {
+    return { ok: true, licenses: [] };
   }
-  return obj;
-}
 
-try {
-  var servProvCode = aa.getServiceProviderCode();
-  var searchTerm = '${safeQ}';
-  var upperTerm = searchTerm.toUpperCase();
-
-  var query = "SELECT TOP 20 " +
-    "B1_ALT_ID, B1_PER_ID1, B1_PER_ID2, B1_PER_ID3, " +
-    "B1_SPECIAL_TEXT, B1_APPL_STATUS, B1_PER_TYPE, B1_PER_SUB_TYPE, " +
-    "B1_PER_CATEGORY, B1_PER_GROUP, " +
-    "REC_STATUS, REC_DATE, B1_CREATED_BY, " +
-    "B1_EXPIRATION_DATE, B1_LICENSE_NBR " +
-    "FROM B1PERMIT " +
-    "WHERE SERV_PROV_CODE = '" + servProvCode + "' " +
-    "AND REC_STATUS = 'A' " +
-    "AND (" +
-      "UPPER(B1_ALT_ID) LIKE '%" + upperTerm + "%' " +
-      "OR UPPER(B1_SPECIAL_TEXT) LIKE '%" + upperTerm + "%' " +
-      "OR B1_PER_ID1 + B1_PER_ID2 + B1_PER_ID3 = '" + searchTerm + "' " +
-      "OR CAST(B1_PER_ID1 AS VARCHAR) + CAST(B1_PER_ID2 AS VARCHAR) + CAST(B1_PER_ID3 AS VARCHAR) LIKE '%" + searchTerm + "%' " +
-    ") " +
-    "ORDER BY REC_DATE DESC";
-
-  var result = aa.db.select(query, []);
-
-  if (!result.getSuccess()) {
-    logMessage(JSON.stringify({
-      success: false,
-      error: "Query failed: " + result.getErrorMessage(),
-      servProvCode: servProvCode
-    }));
-  } else {
-    var rows = [];
-    var rs = result.getOutput();
-    for (var i = 0; i < rs.size(); i++) {
-      rows.push(rowToObject(rs.get(i)));
-    }
-    logMessage(JSON.stringify({
-      success: true,
-      servProvCode: servProvCode,
-      count: rows.length,
-      data: rows
-    }));
-  }
-} catch (err) {
-  logMessage(JSON.stringify({
-    success: false,
-    error: err.toString()
-  }));
-}
-`;
-
+  // Strategy 1: Try searching by customId (B1_ALT_ID)
   try {
-    const result = await window.radish.accela.executeScript(script);
-    const parsed = parseScriptResult(result);
+    const result = await window.radish.accela.getRecords({ customId: term });
+    const records = normalizeResult(result);
 
-    if (!parsed.success) {
-      return { ok: false, licenses: [], error: parsed.error || 'Script returned success=false', raw: result };
+    if (records.length > 0) {
+      return {
+        ok: true,
+        licenses: records.map(mapRecordToLicense),
+        raw: result,
+        method: 'getRecords(customId)',
+      };
+    }
+  } catch (err) {
+    // If customId search fails, fall through to next strategy
+    console.warn('[accela] customId search failed, trying broader search:', err);
+  }
+
+  // Strategy 2: Try POST /v4/records/search with module/type filter
+  try {
+    const result = await window.radish.accela.searchRecords(
+      { customId: term },
+      { suppressOverlay: true },
+    );
+    const records = normalizeResult(result);
+
+    if (records.length > 0) {
+      return {
+        ok: true,
+        licenses: records.map(mapRecordToLicense),
+        raw: result,
+        method: 'searchRecords(customId)',
+      };
+    }
+  } catch (err) {
+    console.warn('[accela] searchRecords(customId) failed:', err);
+  }
+
+  // Strategy 3: Try fetching a single record by ID directly
+  try {
+    const result = await window.radish.accela.getRecord(term);
+    const records = normalizeResult(result);
+
+    if (records.length > 0) {
+      return {
+        ok: true,
+        licenses: records.map(mapRecordToLicense),
+        raw: result,
+        method: 'getRecord(id)',
+      };
+    }
+  } catch (err) {
+    console.warn('[accela] getRecord(id) failed:', err);
+  }
+
+  // Strategy 4: Try GET /v4/records with no filter to prove connectivity,
+  // and search the results client-side (limited to first page of results)
+  try {
+    const result = await window.radish.accela.getRecords({});
+    const records = normalizeResult(result);
+
+    if (records.length > 0) {
+      // Search the returned records client-side
+      const upperTerm = term.toUpperCase();
+      const filtered = records.filter((r) => {
+        const cid = (r.customId || '').toUpperCase();
+        const name = (r.name || '').toUpperCase();
+        const desc = (r.description || '').toUpperCase();
+        const rid = (r.id || '').toUpperCase();
+        return (
+          cid.includes(upperTerm) ||
+          name.includes(upperTerm) ||
+          desc.includes(upperTerm) ||
+          rid.includes(upperTerm)
+        );
+      });
+
+      if (filtered.length > 0) {
+        return {
+          ok: true,
+          licenses: filtered.map(mapRecordToLicense),
+          raw: result,
+          method: 'getRecords() + client filter',
+        };
+      }
+
+      // No match, but we got records — return them all so user can see what exists
+      return {
+        ok: true,
+        licenses: records.slice(0, 20).map(mapRecordToLicense),
+        raw: result,
+        method: 'getRecords() — no match for "' + term + '", showing all records',
+      };
     }
 
-    const licenses: License[] = (parsed.data || []).map(mapRowToLicense);
-    return { ok: true, licenses, raw: result };
+    // Got an empty result
+    return {
+      ok: true,
+      licenses: [],
+      raw: result,
+      method: 'getRecords() — empty result',
+    };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     const code = (err as { code?: string })?.code;
@@ -147,109 +201,68 @@ try {
       licenses: [],
       error: code ? `[${code}] ${msg}` : msg,
       raw: err,
+      method: 'getRecords() — failed',
     };
   }
 }
 
 // ---------------------------------------------------------------------------
-// Result parsing
+// Result normalization — V4 API returns records in various shapes
 // ---------------------------------------------------------------------------
 
-interface ScriptResult {
-  success: boolean;
-  data?: RawRow[];
-  error?: string;
-  servProvCode?: string;
-  count?: number;
-}
+function normalizeResult(raw: unknown): AccelaRecord[] {
+  if (!raw) return [];
 
-interface RawRow {
-  B1_ALT_ID?: string;
-  B1_PER_ID1?: string;
-  B1_PER_ID2?: string;
-  B1_PER_ID3?: string;
-  B1_SPECIAL_TEXT?: string;
-  B1_APPL_STATUS?: string;
-  B1_PER_TYPE?: string;
-  B1_PER_SUB_TYPE?: string;
-  B1_PER_CATEGORY?: string;
-  B1_PER_GROUP?: string;
-  REC_STATUS?: string;
-  REC_DATE?: string;
-  B1_CREATED_BY?: string;
-  B1_EXPIRATION_DATE?: string;
-  B1_LICENSE_NBR?: string;
-}
+  // Direct array
+  if (Array.isArray(raw)) return raw as AccelaRecord[];
 
-function parseScriptResult(raw: unknown): ScriptResult {
-  // The broker may return the result in several shapes depending on the template wrapper.
-  // executeScript returns whatever logMessage(...) emitted, parsed as JSON.
-  if (raw && typeof raw === 'object') {
+  // Object with result array (Accela wraps in { result: [...] })
+  if (typeof raw === 'object') {
     const obj = raw as Record<string, unknown>;
-
-    // Direct shape: { success, data, ... }
-    if ('success' in obj) return obj as unknown as ScriptResult;
-
-    // Wrapped in messages array
-    if (Array.isArray(obj.messages)) {
-      for (const msg of obj.messages) {
-        try {
-          const parsed = typeof msg === 'string' ? JSON.parse(msg) : msg;
-          if (parsed && typeof parsed === 'object' && 'success' in parsed) {
-            return parsed as ScriptResult;
-          }
-        } catch { /* skip non-JSON messages */ }
-      }
-    }
-
-    // Wrapped in { logs, messages } shape
-    if (typeof obj.messageOutput === 'string') {
-      try {
-        return JSON.parse(obj.messageOutput) as ScriptResult;
-      } catch { /* fall through */ }
-    }
+    if (Array.isArray(obj.result)) return obj.result as AccelaRecord[];
+    // Single record object
+    if (obj.id || obj.customId) return [obj as AccelaRecord];
   }
 
-  // If it's a string, try parsing directly
-  if (typeof raw === 'string') {
-    try {
-      return JSON.parse(raw) as ScriptResult;
-    } catch { /* fall through */ }
-  }
-
-  return { success: false, error: 'Could not parse script result', data: [] };
+  return [];
 }
 
 // ---------------------------------------------------------------------------
-// Row → License mapping
+// V4 Record → License mapping
 // ---------------------------------------------------------------------------
 
-function mapRowToLicense(row: RawRow): License {
-  const altId = row.B1_ALT_ID || '';
-  const trackingNbr = [row.B1_PER_ID1, row.B1_PER_ID2, row.B1_PER_ID3].filter(Boolean).join('-');
-  const licenseType = [row.B1_PER_GROUP, row.B1_PER_TYPE, row.B1_PER_SUB_TYPE, row.B1_PER_CATEGORY]
-    .filter(Boolean)
-    .join(' / ');
+function mapRecordToLicense(rec: AccelaRecord): License {
+  const typeStr = rec.type
+    ? [rec.type.group, rec.type.text || rec.type.value, rec.type.subType, rec.type.category]
+        .filter(Boolean)
+        .join(' / ')
+    : 'Business License';
+
+  const statusText = rec.status?.text || rec.status?.value || '';
+  const displayName = rec.name || rec.description || rec.customId || rec.id || 'Unknown';
 
   return {
-    number: altId || trackingNbr,
-    businessName: row.B1_SPECIAL_TEXT || altId || 'Unknown',
+    number: rec.customId || rec.id || '',
+    businessName: displayName,
     dba: undefined,
-    type: licenseType || 'Business License',
-    owner: row.B1_CREATED_BY || 'On file',
+    type: typeStr || 'Business License',
+    owner: 'On file',
     email: '',
     phone: '',
     address: '',
     employees: '',
-    issued: formatAccelaDate(row.REC_DATE),
-    expires: formatAccelaDate(row.B1_EXPIRATION_DATE) || futureDate(365),
-    renewalFee: 180, // default; real fee would come from F4FEEITEM
+    issued: formatAccelaDate(rec.openedDate),
+    expires: formatAccelaDate(rec.expirationDate) || futureDate(365),
+    renewalFee: 180,
+    // Stash extra V4 fields for debugging / detail view
+    _accelaStatus: statusText,
+    _accelaModule: rec.module || '',
+    _accelaId: rec.id || '',
   };
 }
 
 function formatAccelaDate(val?: string): string {
   if (!val) return '';
-  // Accela dates can be "2024-03-15 00:00:00.0" or ISO or just "YYYY-MM-DD"
   const d = new Date(val);
   if (isNaN(d.getTime())) return '';
   return d.toISOString().slice(0, 10);
