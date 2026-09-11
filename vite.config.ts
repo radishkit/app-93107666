@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+  base: '/DEMO18-NONPROD2/Customization/DEMO18/civira-license-app/',
   plugins: [react()],
   server: {
     port: 5173,
