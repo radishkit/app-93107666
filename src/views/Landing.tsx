@@ -1,19 +1,50 @@
 import { useState } from 'react';
 import { View } from '../App';
-import { License, findLicense, fmtDate, licenseStatus } from '../data';
+import { License, findLicense, fmtDate, licenseStatus, hasSDK, searchLicensesAccela } from '../data';
+
+type SearchState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'results'; licenses: License[]; source: 'accela' | 'mock' }
+  | { kind: 'error'; message: string; raw?: unknown };
 
 export function Landing({ go, licenses }: { go: (v: View) => void; licenses: License[] }) {
   const [q, setQ] = useState('');
-  const [notFound, setNotFound] = useState(false);
+  const [search, setSearch] = useState<SearchState>({ kind: 'idle' });
 
-  const search = (e: React.FormEvent) => {
+  const sdkAvailable = hasSDK();
+
+  const doSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    const hit = findLicense(q);
+    const term = q.trim();
+    if (!term) return;
+
+    // If SDK is available, query Accela
+    if (sdkAvailable) {
+      setSearch({ kind: 'loading' });
+      const result = await searchLicensesAccela(term);
+
+      if (result.ok && result.licenses.length > 0) {
+        setSearch({ kind: 'results', licenses: result.licenses, source: 'accela' });
+        // If exactly one result, jump straight to detail
+        if (result.licenses.length === 1) {
+          go({ name: 'detail', licenseNumber: result.licenses[0].number, accelaLicense: result.licenses[0] });
+        }
+      } else if (result.ok && result.licenses.length === 0) {
+        setSearch({ kind: 'results', licenses: [], source: 'accela' });
+      } else {
+        setSearch({ kind: 'error', message: result.error || 'Unknown error', raw: result.raw });
+      }
+      return;
+    }
+
+    // Fallback: search mock data
+    const hit = findLicense(term);
     if (hit) {
-      setNotFound(false);
+      setSearch({ kind: 'results', licenses: [hit], source: 'mock' });
       go({ name: 'detail', licenseNumber: hit.number });
     } else {
-      setNotFound(true);
+      setSearch({ kind: 'results', licenses: [], source: 'mock' });
     }
   };
 
@@ -29,33 +60,154 @@ export function Landing({ go, licenses }: { go: (v: View) => void; licenses: Lic
             Look up your business license, confirm your details, and renew online — no trip to
             City Hall required.
           </p>
-          <form className="lookup" onSubmit={search}>
+
+          {/* Data source indicator */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 12px',
+            borderRadius: 20,
+            fontSize: 12,
+            fontWeight: 600,
+            marginBottom: 12,
+            background: sdkAvailable ? 'rgba(34,197,94,0.15)' : 'rgba(251,191,36,0.15)',
+            color: sdkAvailable ? '#16a34a' : '#d97706',
+            border: `1px solid ${sdkAvailable ? 'rgba(34,197,94,0.3)' : 'rgba(251,191,36,0.3)'}`,
+          }}>
+            <span style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: sdkAvailable ? '#22c55e' : '#f59e0b',
+            }} />
+            {sdkAvailable ? '● Live Accela data' : '○ Mock data (SDK not loaded)'}
+          </div>
+
+          <form className="lookup" onSubmit={doSearch}>
             <input
               value={q}
               onChange={(e) => {
                 setQ(e.target.value);
-                setNotFound(false);
+                if (search.kind !== 'idle') setSearch({ kind: 'idle' });
               }}
-              placeholder="License number (BL26-1042) or business name…"
+              placeholder={sdkAvailable
+                ? 'License number, tracking number, or business name…'
+                : 'License number (BL26-1042) or business name…'}
               aria-label="Search licenses"
             />
-            <button className="btn btn--primary" type="submit">
-              Look up
+            <button
+              className="btn btn--primary"
+              type="submit"
+              disabled={search.kind === 'loading'}
+            >
+              {search.kind === 'loading' ? 'Searching…' : 'Look up'}
             </button>
           </form>
-          {notFound && (
-            <p className="lookup__miss">
-              No match — try your license number (on your certificate) or the business's legal
-              name.
+
+          {/* Loading state */}
+          {search.kind === 'loading' && (
+            <p style={{ color: '#94a3b8', fontSize: 14, marginTop: 8 }}>
+              ⏳ Querying Accela B1PERMIT table…
             </p>
+          )}
+
+          {/* No results */}
+          {search.kind === 'results' && search.licenses.length === 0 && (
+            <p className="lookup__miss">
+              No matching records found{search.source === 'accela' ? ' in Accela' : ''}.
+              {search.source === 'accela'
+                ? ' Try a different license number or business name.'
+                : ' Try your license number (on your certificate) or the business\'s legal name.'}
+            </p>
+          )}
+
+          {/* Error state */}
+          {search.kind === 'error' && (
+            <div style={{
+              marginTop: 12,
+              padding: '12px 16px',
+              borderRadius: 8,
+              background: 'rgba(239,68,68,0.1)',
+              border: '1px solid rgba(239,68,68,0.3)',
+              color: '#ef4444',
+              fontSize: 13,
+              textAlign: 'left',
+              maxWidth: 600,
+            }}>
+              <strong>Accela query failed:</strong> {search.message}
+              {search.raw && (
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: 'pointer', fontSize: 12, color: '#94a3b8' }}>
+                    Raw response
+                  </summary>
+                  <pre style={{
+                    fontSize: 11,
+                    marginTop: 4,
+                    padding: 8,
+                    background: 'rgba(0,0,0,0.2)',
+                    borderRadius: 4,
+                    overflow: 'auto',
+                    maxHeight: 200,
+                    whiteSpace: 'pre-wrap',
+                    color: '#cbd5e1',
+                  }}>
+                    {JSON.stringify(search.raw, null, 2)}
+                  </pre>
+                </details>
+              )}
+            </div>
           )}
         </div>
       </header>
 
       <main className="container">
+        {/* Show Accela search results if we have them */}
+        {search.kind === 'results' && search.licenses.length > 0 && search.source === 'accela' && (
+          <section className="demo-licenses">
+            <h2>
+              Search results
+              <span style={{ fontSize: 14, fontWeight: 400, color: '#94a3b8', marginLeft: 8 }}>
+                ({search.licenses.length} record{search.licenses.length !== 1 ? 's' : ''} from Accela)
+              </span>
+            </h2>
+            <div className="permitlist">
+              {search.licenses.map((lic) => {
+                const status = licenseStatus(lic);
+                return (
+                  <button
+                    key={lic.number}
+                    className="permitcard"
+                    onClick={() => go({ name: 'detail', licenseNumber: lic.number, accelaLicense: lic })}
+                  >
+                    <div className="permitcard__main">
+                      <div className="permitcard__id">{lic.number}</div>
+                      <div className="permitcard__biz">{lic.businessName}</div>
+                      <div className="permitcard__meta">
+                        {lic.type} · {lic.expires ? `expires ${fmtDate(lic.expires)}` : 'no expiry on file'}
+                      </div>
+                    </div>
+                    <div className="permitcard__side">
+                      <span className={`badge badge--${status.replace(/\s/g, '').toLowerCase()}`}>
+                        {status}
+                      </span>
+                      <span className="permitcard__go" aria-hidden>→</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Always show mock/seed licenses below */}
         <section className="demo-licenses">
-          <h2>Licenses on file for your account</h2>
-          <p className="muted">Signed in as owner — select a license to view or renew it.</p>
+          <h2>{sdkAvailable ? 'Demo licenses (mock data)' : 'Licenses on file for your account'}</h2>
+          <p className="muted">
+            {sdkAvailable
+              ? 'These are hardcoded demo records. Use the search bar above to query real Accela data.'
+              : 'Signed in as owner — select a license to view or renew it.'}
+          </p>
           <div className="permitlist">
             {licenses.map((lic) => {
               const status = licenseStatus(lic);

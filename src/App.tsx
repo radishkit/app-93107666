@@ -7,7 +7,7 @@ import { License, Receipt, loadLicenses } from './data';
 
 export type View =
   | { name: 'landing' }
-  | { name: 'detail'; licenseNumber: string }
+  | { name: 'detail'; licenseNumber: string; accelaLicense?: License }
   | { name: 'renew'; licenseNumber: string }
   | { name: 'receipt'; receipt: Receipt };
 
@@ -22,7 +22,11 @@ export default function App() {
     window.scrollTo({ top: 0 });
   }, []);
 
-  const byNumber = (n: string) => licenses.find((l) => l.number === n) ?? licenses[0];
+  // Find a license by number — check both the local list and any passed Accela license
+  const byNumber = (n: string, accelaLicense?: License) => {
+    if (accelaLicense && accelaLicense.number === n) return accelaLicense;
+    return licenses.find((l) => l.number === n) ?? licenses[0];
+  };
 
   return (
     <div className="portal">
@@ -45,7 +49,12 @@ export default function App() {
       </nav>
 
       {view.name === 'landing' && <Landing go={go} licenses={licenses} />}
-      {view.name === 'detail' && <Detail license={byNumber(view.licenseNumber)} go={go} />}
+      {view.name === 'detail' && (
+        <Detail
+          license={byNumber(view.licenseNumber, view.accelaLicense)}
+          go={go}
+        />
+      )}
       {view.name === 'renew' && (
         <RenewWizard license={byNumber(view.licenseNumber)} go={go} onRenewed={refresh} />
       )}

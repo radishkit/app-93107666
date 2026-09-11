@@ -148,6 +148,7 @@ export function loadLicenses(): License[] {
   });
 }
 
+/** Sync search — mock/seed data only (fallback when SDK unavailable). */
 export function findLicense(q: string): License | undefined {
   const norm = q.trim().toLowerCase();
   if (!norm) return undefined;
@@ -158,6 +159,9 @@ export function findLicense(q: string): License | undefined {
       (l.dba ?? '').toLowerCase().includes(norm),
   );
 }
+
+// Re-export Accela helpers so Landing can import from one place
+export { hasSDK, searchLicensesAccela } from './accela';
 
 export function receiptFor(licenseNumber: string): Receipt | undefined {
   return loadRenewals()[licenseNumber]?.receipt;
